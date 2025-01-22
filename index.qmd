@@ -1,11 +1,11 @@
 ---
-title: "website-adhni"
+title: "Welcome to My Website"
 ---
 
-This is a Quarto website.
+# Recent Articles
 
-To learn more about Quarto websites visit <https://quarto.org/docs/websites>.
+```{.list}
+type: grid
+contents: articles
+page-layout: card
 
-```{r}
-1 + 1
-```

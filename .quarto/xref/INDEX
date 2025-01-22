@@ -4,5 +4,17 @@
   },
   "about.qmd": {
     "about.html": "1d0ef770"
+  },
+  "article/test.qmd": {
+    "test.html": "8412d3fc"
+  },
+  "article/berlinmar.qmd": {
+    "berlinmar.html": "39e282c3"
+  },
+  "articles/berlinmar.qmd": {
+    "berlinmar.html": "e47101dd"
+  },
+  "articles/test.qmd": {
+    "test.html": "88a441ba"
   }
 }

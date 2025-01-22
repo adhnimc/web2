@@ -7,7 +7,14 @@ website:
     left:
       - href: index.qmd
         text: Home
-      - about.qmd
+      - href: about.qmd
+        text: About
+      - text: Articles
+        href: articles/
+
+collections:
+  articles:
+    folder: articles
 
 format:
   html:
@@ -16,4 +23,5 @@ format:
     toc: true
 
 editor: visual
+
 

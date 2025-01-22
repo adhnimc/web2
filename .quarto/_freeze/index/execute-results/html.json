@@ -1,8 +1,8 @@
 {
-  "hash": "1ba73bf893d1e3d4a63e560f5f277577",
+  "hash": "b47a4111e91479264c3942d96091e69a",
   "result": {
     "engine": "knitr",
-    "markdown": "---\ntitle: \"website-adhni\"\n---\n\n\nThis is a Quarto website.\n\nTo learn more about Quarto websites visit <https://quarto.org/docs/websites>.\n\n\n::: {.cell}\n\n```{.r .cell-code}\n1 + 1\n```\n\n::: {.cell-output .cell-output-stdout}\n\n```\n[1] 2\n```\n\n\n:::\n:::\n",
+    "markdown": "---\ntitle: \"website-adhni\"\n---\n\n\nThis is a Quarto website.\n\nTo learn more about Quarto websites visit <https://quarto.org/docs/websites>.\n\n\n::: {.cell}\n\n```{.r .cell-code}\n1 + 1\n```\n\n::: {.cell-output .cell-output-stdout}\n\n```\n[1] 2\n```\n\n\n:::\n:::\n\n---\ntitle: \"Welcome to My Website\"\n---\n\n\n# Recent Articles\n\n### My First Article\n\n*Published on: 2025-01-22*\\\nA short intro about the article.\\\n[Read More →](articles/berlinmar.qmd)\n\n### Another Article\n\n*Published on: 2025-01-25*\\\nAnother brief description.\\\n[Read More →](articles/another-article.qmd)\n",
     "supporting": [],
     "filters": [
       "rmarkdown/pagebreak.lua"

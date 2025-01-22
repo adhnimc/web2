@@ -1,0 +1,231 @@
+---
+title: "Berlin Marathon 2019"
+author: "Adhni Mulachela"
+knitr:
+  opts_chunk:
+    echo: false
+    warning: false
+    messsage: false
+---
+
+This analysis explores the 2019 Berlin Marathon data.
+
+```{r, message=FALSE,warning=FALSE}
+library(readr)
+library(tidyverse)
+library(ggplot2)
+library(plotly)
+library(ggrepel)
+
+```
+
+```{r, message=FALSE,warning=FALSE}
+berlin_2019 <- read_csv("results-2019.csv")
+```
+
+```{r}
+
+# Function to convert seconds to HH:MM format
+seconds_to_hhmm <- function(seconds) {
+  hours <- floor(seconds / 3600)
+  minutes <- floor((seconds %% 3600) / 60)
+  sprintf("%02d:%02d", hours, minutes)
+}
+
+# Convert time_full to numeric (in seconds) and add HH:MM format for tooltips
+selected_runners <- berlin_2019 %>%
+  mutate(
+    time_full_sec = as.numeric(time_full),
+    time_full_hhmm = seconds_to_hhmm(as.numeric(time_full))  # Add formatted time column
+  )
+
+# Plot overlapping histograms for M and W
+p <- ggplot(selected_runners, aes(x = time_full_sec, fill = gender)) +
+  geom_histogram(
+    binwidth = 600, alpha = 0.6, position = 'identity',
+    aes(text = paste0(
+      "<b>TIME (HH:MM):</b> ", seconds_to_hhmm(..x..), "<br>",
+      "<b>COUNT:</b> ", ..count.., "<br>",
+      "<b>GENDER:</b> ", ..fill..
+    )),
+    stat = "bin"
+  ) +
+  scale_x_continuous(
+    limits = c(3600, 25200),  # Setting limits from 1 hour (3600s) to 7 hours (25200s)
+    breaks = seq(3600, 25200, by = 3600),  # Breaks at every hour
+    labels = function(x) sprintf("%02d:%02d", floor(x / 3600), floor((x %% 3600) / 60))  # Convert seconds to HH:MM
+  ) +
+  labs(
+    title = "Distribution of Full Marathon Times by Gender",
+    x = "TIME FULL (HH:MM)",
+    y = "COUNT",
+    fill = "GENDER"
+  ) +
+  theme_minimal()
+
+# Convert to interactive plot with hover text showing the HH:MM format
+interactive_plot <- ggplotly(p, tooltip = "text")
+
+# Display the interactive plot
+interactive_plot
+
+```
+
+```{r}
+
+
+# Function to convert seconds to HH:MM format
+seconds_to_hhmm <- function(seconds) {
+  hours <- floor(seconds / 3600)
+  minutes <- floor((seconds %% 3600) / 60)
+  sprintf("%02d:%02d", hours, minutes)
+}
+
+# Calculate median times, number of runners, and filter countries with at least 10 runners
+berlin_2019 %>%
+  group_by(nationality, gender) %>%
+  summarise(
+    median_time = median(as.numeric(time_full), na.rm = TRUE),
+    runner_count = n(),  # Count the number of runners
+    .groups = "drop"
+  ) %>%
+  pivot_wider(
+    names_from = gender,
+    values_from = c(median_time, runner_count),
+    names_prefix = ""
+  ) %>%
+  mutate(
+    M_hhmm = seconds_to_hhmm(median_time_M),
+    W_hhmm = seconds_to_hhmm(median_time_W),
+    total_runners = runner_count_M + runner_count_W  # Total runners for scaling dot size
+  ) %>%
+  filter(total_runners >= 0) %>%  # Filter countries with fewer than 10 runners
+  ggplot(aes(x = median_time_M, y = median_time_W, label = nationality, size = total_runners,
+             text = paste0("<b>Country:</b> ", nationality,
+                           "<br><b>Median Time (Men):</b> ", M_hhmm,
+                           "<br><b>Median Time (Women):</b> ", W_hhmm,
+                           "<br><b>Number of Runners:</b> ", total_runners))) +
+  geom_point(aes(color = nationality), alpha = 0.7, position = position_jitter(width = 100, height = 100)) +  # Add jitter
+  scale_size(range = c(3, 10)) +  # Adjust dot size scaling
+  scale_color_viridis_d() +  # Distinct color palette
+  geom_text_repel(aes(label = nationality), max.overlaps = 20, size = 3, color = "black") +  # Reduce max overlaps
+  scale_x_continuous(
+    labels = seconds_to_hhmm, 
+    name = "Median Time for Men (HH:MM)",
+    limits = c(0, 21600)  # Limit to 3 to 6 hours
+  ) +
+  scale_y_continuous(
+    labels = seconds_to_hhmm, 
+    name = "Median Time for Women (HH:MM)",
+    limits = c(0, 21600)  # Limit to 3 to 6 hours
+  ) +
+  labs(
+    title = "Comparison of Median Times: Men vs Women (atleast 20 runners)",
+    subtitle = "Dot size represents the number of runners",
+    #caption = "Note: Only countries with more than 10 runners are included.",
+    size = "Number of Runners",
+    color = "Country"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "none",
+    axis.title = element_text(size = 12, face = "bold"),
+    axis.text = element_text(size = 10),
+    plot.caption = element_text(hjust = 0.5, size = 10, face = "italic")  # Style for the note
+  ) -> p
+
+# Convert to an interactive plot
+ggplotly(p, tooltip = "text")
+
+```
+
+```{r}
+# Count the number of runners per country and filter for countries with more than 150 runners
+filtered_data <- berlin_2019 %>%
+  group_by(nationality) %>%
+  filter(n() > 20)
+
+# Summarize data by nationality and gender, calculating the median time_full for men and women
+summary_data <- filtered_data %>%
+  group_by(nationality, gender) %>%
+  summarise(
+    median_time_full = median(as.numeric(time_full), na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# Reshape the data to calculate the difference between men and women's median time
+diff_data <- summary_data %>%
+  pivot_wider(names_from = gender, values_from = median_time_full) %>%  # Use pivot_wider instead of spread
+  filter(!is.na(M) & !is.na(W)) %>%  # Ensure both genders have data
+  mutate(
+    diff_time_sec = W - M  # Difference in seconds: Women’s time minus Men's time
+  ) %>%
+  arrange(desc(diff_time_sec)) %>%  # Sort by difference in descending order
+  slice_head(n = 20) %>%  # Select the top 20 countries
+  mutate(nationality = reorder(nationality, diff_time_sec))  # Reorder for plotting
+
+# Plot the top 20 countries with the largest gender median time difference
+ggplot(diff_data, aes(x = nationality, y = diff_time_sec / 60)) +  # Convert seconds to minutes
+  geom_col(fill = "skyblue") +  # Use consistent color for bars
+  labs(
+    title = "Top 20 Countries: Gender Median Time Difference",
+    x = "Nationality",
+    y = "Time Difference (Minutes)"
+  ) +
+  coord_flip() +  # Flip coordinates for horizontal bars
+  theme_minimal()
+
+```
+
+```{r}
+
+
+# Function to convert seconds to HH:MM format
+seconds_to_hhmm <- function(seconds) {
+  hours <- floor(seconds / 3600)
+  minutes <- floor((seconds %% 3600) / 60)
+  sprintf("%02d:%02d", hours, minutes)
+}
+
+# Calculate median times and total runners
+berlin_2019 %>%
+  group_by(nationality) %>%
+  summarise(
+    median_time_overall = median(as.numeric(time_full), na.rm = TRUE),
+    total_runners = n(),  # Total number of runners
+    .groups = "drop"
+  ) %>%
+  filter(total_runners >= 10) %>%  # Filter countries with fewer than 10 runners
+  ggplot(aes(x = median_time_overall, y = total_runners, label = nationality,
+             text = paste0("<b>Country:</b> ", nationality,
+                           "<br><b>Median Time Overall:</b> ", seconds_to_hhmm(median_time_overall),
+                           "<br><b>Total Runners:</b> ", total_runners))) +
+  geom_point(color = "blue", alpha = 0.7) +  # Simple dots
+  geom_text_repel(aes(label = nationality), max.overlaps = 20, size = 3, color = "black") +  # Add country labels
+  scale_x_continuous(
+    labels = seconds_to_hhmm, 
+    name = "Median Time Overall (HH:MM)",
+    limits = c(10800, 21600)  # Limit to 3 to 6 hours
+  ) +
+  scale_y_log10(
+    name = "Total Runners (Log Scale)",
+    breaks = c(10, 50, 100, 500, 1000),  # Set custom log breaks
+    labels = scales::comma  # Format y-axis labels with commas
+  ) +
+  labs(
+    title = "Median Time Overall vs. Total Runners (Log Scale)",
+    subtitle = "Only countries with more than 10 runners are included",
+    x = "Median Time Overall (HH:MM)",
+    y = "Total Runners (Log Scale)"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.title = element_text(size = 12, face = "bold"),
+    axis.text = element_text(size = 10),
+    plot.caption = element_text(hjust = 0.5, size = 10, face = "italic")  # Style for the note
+  ) -> p
+
+# Convert to an interactive plot
+ggplotly(p, tooltip = "text")
+
+```

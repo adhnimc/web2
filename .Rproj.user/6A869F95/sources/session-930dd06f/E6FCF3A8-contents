@@ -1,0 +1,612 @@
+---
+title: "jan8"
+format: html
+editor: visual
+---
+
+```{r}
+# Load the libraries
+library(nycflights13)
+library(dplyr)
+library(leaflet)
+library(tidyverse)
+library(ggplot2)
+library(lubridate)
+```
+
+
+
+
+```{r}
+
+flights_cumulative <- flights %>%
+  filter(dep_delay > 0) %>%  # Only include delayed flights
+  mutate(delay_bucket = floor(dep_delay / 5) * 5) %>%  # Group into 5-minute buckets
+  group_by(origin, delay_bucket) %>%
+  summarise(count = n(), .groups = "drop") %>%  # Count delayed flights in each bucket
+  arrange(origin, delay_bucket) %>%  # Ensure proper order
+  group_by(origin) %>%
+  mutate(cumulative_count = cumsum(count))  # Calculate cumulative count
+
+# Line chart: Cumulative delayed flights by time bucket
+ggplot(flights_cumulative, aes(x = delay_bucket, y = cumulative_count, color = origin, group = origin)) +
+  geom_line(size = 1) +  # Create lines for each origin
+  geom_point(size = 2) +  # Optional: Add points for clarity
+  xlab("Departure Delay (minutes)") +
+  ylab("Cumulative Count of Delayed Flights") +
+  ggtitle("Cumulative Delayed Flights by Delay Time and Airport") +
+  theme_minimal() +
+  theme(legend.title = element_blank())  # Remove legend title
+
+```
+
+```{r}
+# Step 1: Create a table with the total count of all flights for each airport
+total_flights <- flights %>%
+  group_by(origin) %>%
+  summarise(total_flights = n(), .groups = "drop")  # Total number of flights per airport
+
+# Step 2: Create cumulative counts of delayed flights for each airport and bucket
+flights_cumulative <- flights %>%
+  filter(dep_delay > 0) %>%  # Only include delayed flights
+  mutate(delay_bucket = floor(dep_delay / 5) * 5) %>%  # Group into 5-minute buckets
+  group_by(origin, delay_bucket) %>%
+  summarise(delayed_flights = n(), .groups = "drop") %>%  # Count delayed flights in each bucket
+  arrange(origin, delay_bucket) %>%
+  group_by(origin) %>%
+  mutate(cumulative_delayed_flights = cumsum(delayed_flights))  # Calculate cumulative count of delayed flights
+
+# Step 3: Join with the total flights table to calculate cumulative percentage
+flights_cumulative <- flights_cumulative %>%
+  left_join(total_flights, by = "origin") %>%  # Join to get total flights for each airport
+  mutate(cumulative_percentage = (cumulative_delayed_flights / total_flights) * 100)  # Calculate percentage
+
+# Step 4: Plot the cumulative percentage
+ggplot(flights_cumulative, aes(x = delay_bucket, y = cumulative_percentage, color = origin, group = origin)) +
+  geom_line(size = 1) +  # Create lines for each origin
+  xlab("Departure Delay (minutes, square root scale)") +
+  ylab("Cumulative Percentage of All Flights") +
+  ggtitle("Cumulative Percentage of All Flights Delayed by Time and Airport") +
+  scale_x_sqrt(
+    breaks = c(1,15,30, 60, 120, 180, 240, 300, 360, 420, 480, 540, 600),  # Hourly intervals
+    labels = c("0","15m","30m", "1h", "2h", "3h", "4h", "5h", "6h", "7h", "8h", "9h", "10h")
+  ) +
+  coord_cartesian(xlim = c(15, 300)) +  # Limit X-axis to 1–600 minutes
+  theme_minimal() +
+  theme(legend.title = element_blank())  # Remove legend title
+
+```
+
+```{r}
+# Combine Step 1 and Step 2: Calculate total flights and filter airlines with >10,000 flights
+filtered_flights <- flights %>%
+  group_by(carrier) %>%
+  summarise(
+    total_flights = n(),  # Total number of flights per airline
+    .groups = "drop"
+  ) %>%
+  filter(total_flights > 20000)  # Only keep airlines with >10,000 flights
+
+# Step 2: Create cumulative counts of delayed flights for the filtered airlines
+flights_cumulative_by_airline <- flights %>%
+  filter(dep_delay > 0) %>%  # Only include delayed flights
+  mutate(delay_bucket = floor(dep_delay / 5) * 5) %>%  # Group into 5-minute buckets
+  group_by(carrier, delay_bucket) %>%
+  summarise(delayed_flights = n(), .groups = "drop") %>%  # Count delayed flights in each bucket
+  filter(carrier %in% filtered_flights$carrier) %>%  # Filter only airlines with >10,000 flights
+  arrange(carrier, delay_bucket) %>%
+  group_by(carrier) %>%
+  mutate(cumulative_delayed_flights = cumsum(delayed_flights))  # Calculate cumulative count of delayed flights
+
+# Step 3: Join with filtered total flights to calculate cumulative percentage
+flights_cumulative_by_airline <- flights_cumulative_by_airline %>%
+  left_join(filtered_flights, by = "carrier") %>%  # Join to get total flights for each airline
+  mutate(cumulative_percentage = (cumulative_delayed_flights / total_flights) * 100)  # Calculate percentage
+
+# Step 4: Plot the cumulative percentage by airline
+ggplot(flights_cumulative_by_airline, aes(x = delay_bucket, y = cumulative_percentage, color = carrier, group = carrier)) +
+  geom_line(size = 1) +  # Create lines for each airline
+  xlab("Departure Delay (minutes, square root scale)") +
+  ylab("Cumulative Percentage of All Flights") +
+  ggtitle("Cumulative Percentage of All Flights Delayed by Time and Airline (Airlines with >10,000 Flights)") +
+  scale_x_sqrt(
+    breaks = c(1, 15, 30, 60, 120, 180, 240, 300),  # Define intervals
+    labels = c("1m", "15m", "30m", "1h", "2h", "3h", "4h", "5h")
+  ) +
+  coord_cartesian(xlim = c(15, 300)) +  # Limit X-axis to 15–300 minutes
+  theme_minimal() +
+  theme(legend.title = element_blank())  # Remove legend title
+
+```
+
+```{r}
+
+
+# Step 1: Calculate total flights and filter destinations with >10,000 flights
+filtered_destinations <- flights %>%
+  group_by(dest) %>%
+  summarise(
+    total_flights = n(),  # Total number of flights per destination
+    .groups = "drop"
+  ) %>%
+  filter(total_flights > 10000)  # Only keep destinations with >10,000 flights
+
+# Step 2: Create cumulative counts of delayed flights for the filtered destinations (using arrival delays)
+flights_cumulative_by_destination <- flights %>%
+  filter(arr_delay > 0) %>%  # Only include flights with arrival delays
+  mutate(delay_bucket = floor(arr_delay / 15) * 15) %>%  # Group into 5-minute buckets
+  group_by(dest, delay_bucket) %>%
+  summarise(delayed_flights = n(), .groups = "drop") %>%  # Count delayed flights in each bucket
+  filter(dest %in% filtered_destinations$dest) %>%  # Filter only destinations with >10,000 flights
+  arrange(dest, delay_bucket) %>%
+  group_by(dest) %>%
+  mutate(cumulative_delayed_flights = cumsum(delayed_flights))  # Calculate cumulative count of delayed flights
+
+# Step 3: Join with filtered total flights to calculate cumulative percentage
+flights_cumulative_by_destination <- flights_cumulative_by_destination %>%
+  left_join(filtered_destinations, by = "dest") %>%  # Join to get total flights for each destination
+  mutate(cumulative_percentage = (cumulative_delayed_flights / total_flights) * 100)  # Calculate percentage
+
+# Step 4: Create a ggplot object for arrival delays
+p <- ggplot(flights_cumulative_by_destination, aes(x = delay_bucket, y = cumulative_percentage, color = dest, group = dest)) +
+  geom_line(size = 1) +  # Create lines for each destination
+  xlab("Arrival Delay (minutes, square root scale)") +
+  ylab("Cumulative Percentage of All Flights") +
+  ggtitle("Cumulative Percentage of All Flights Delayed by Arrival Time and Destination (Destinations with >10,000 Flights)") +
+  scale_x_sqrt(
+    breaks = c(1,5 ,15, 30,45, 60,90, 120,150 ,180, 240, 300),  # Define intervals
+    labels = c("1m","5m", "15m", "30m","45m", "1h","1h30m", "2h","2h30m", "3h", "4h", "5h")
+  ) +
+  coord_cartesian(xlim = c(5, 180)) +  # Limit X-axis to 15–300 minutes
+  theme_minimal() +
+  theme(legend.title = element_blank())  # Remove legend title
+
+# Step 5: Convert ggplot object to an interactive plot using plotly
+interactive_plot <- ggplotly(p)
+
+# Step 6: Display the interactive plot
+interactive_plot
+
+
+```
+
+```{r}
+# Load necessary librari
+
+# Step 1: Filter for specific airlines and destinations
+specific_airlines <- c("AA", "UA", "DL", "B6", "WN")  # American, United, Delta, JetBlue, Southwest
+specific_destinations <- c("BOS", "ORD", "MCO", "DFW", "LAX", "SFO")  # Selected destinations
+
+# Step 2: Create cumulative counts of delayed flights for the specific airlines and destinations
+flights_cumulative_by_destination <- flights %>%
+  filter(
+    arr_delay > 0,  # Only include flights with arrival delays
+    carrier %in% specific_airlines,  # Filter for specific airlines
+    dest %in% specific_destinations  # Filter for specific destinations
+  ) %>%
+  mutate(delay_bucket = floor(arr_delay / 15) * 15) %>%  # Group into 5-minute buckets
+  group_by(dest, carrier, delay_bucket) %>%
+  summarise(delayed_flights = n(), .groups = "drop") %>%  # Count delayed flights in each bucket
+  arrange(dest, carrier, delay_bucket) %>%
+  group_by(dest, carrier) %>%
+  mutate(
+    cumulative_delayed_flights = cumsum(delayed_flights),  # Calculate cumulative count of delayed flights
+    remaining_flights = sum(delayed_flights) - cumulative_delayed_flights  # Calculate remaining flights
+  )
+
+# Step 3: Calculate total flights for each destination and airline pair
+total_flights_by_dest <- flights %>%
+  filter(
+    carrier %in% specific_airlines,  # Filter for specific airlines
+    dest %in% specific_destinations  # Filter for specific destinations
+  ) %>%
+  group_by(dest, carrier) %>%
+  summarise(total_flights = n(), .groups = "drop")  # Count total flights per destination and airline
+
+# Step 4: Join with total flights to calculate decreasing cumulative percentage
+flights_cumulative_by_destination <- flights_cumulative_by_destination %>%
+  left_join(total_flights_by_dest, by = c("dest", "carrier")) %>%  # Join to get total flights
+  mutate(decreasing_percentage = (remaining_flights / total_flights) * 100)  # Calculate percentage
+
+# Step 5: Create a ggplot object with faceting by destination
+p <- ggplot(flights_cumulative_by_destination, aes(x = delay_bucket, y = decreasing_percentage, color = carrier, group = carrier)) +
+  geom_line(size = 1) +  # Create lines for each carrier
+  xlab("Arrival Delay (minutes, square root scale)") +
+  ylab("Percentage of Flights Remaining") +
+  ggtitle("Percentage of Flights Remaining Delayed by Arrival Time (Selected Destinations and Airlines)") +
+  scale_x_sqrt(
+    breaks = c(1, 15, 30, 60, 120, 180, 240, 300),  # Define intervals
+    labels = c("1m", "15m", "30m", "1h", "2h", "3h", "4h", "5h")
+  ) +
+  coord_cartesian(xlim = c(15, 180)) +  # Limit X-axis to 15–300 minutes
+  theme_minimal() +
+  theme(legend.title = element_blank()) +  # Remove legend title
+  facet_wrap(~dest, scales = "free_y")  # Facet by destinations
+
+# Step 6: Convert ggplot object to an interactive plot using plotly
+interactive_plot <- ggplotly(p)
+
+# Step 7: Display the interactive plot
+interactive_plot
+
+
+
+```
+
+```{r}
+
+
+# Step 1: Filter flights for JFK and EWR and exclude HNL and ANC
+flights_subset <- flights %>%
+  filter(
+    origin %in% c("JFK", "EWR"),
+    !dest %in% c("HNL", "ANC")  # Exclude Honolulu and Anchorage
+  )
+
+# Step 2: Summarize flights by destination and origin
+flights_summary <- flights_subset %>%
+  group_by(dest, origin) %>%
+  summarise(total_flights = n(), .groups = "drop") %>%
+  pivot_wider(names_from = origin, values_from = total_flights, values_fill = 0) %>%  # Wide format
+  mutate(
+    dominant_airport = ifelse(JFK > EWR, "JFK", "EWR"),  # Determine dominant airport
+    total_flights = JFK + EWR  # Calculate total flights
+  ) %>%
+  filter(total_flights >= 2000)  # Keep only destinations with at least 1000 flights
+
+# Step 3: Add geolocation data for destinations using the airports dataset
+flights_map_data <- flights_summary %>%
+  left_join(airports, by = c("dest" = "faa"))  # Join with airports dataset
+
+# Step 4: Add LGA coordinates as the origin point for all lines
+lga_coordinates <- airports %>%
+  filter(faa == "LGA") %>%
+  select(lat, lon) %>%
+  rename(lga_lat = lat, lga_lon = lon)
+
+flights_map_data <- flights_map_data %>%
+  mutate(
+    lga_lat = lga_coordinates$lga_lat,
+    lga_lon = lga_coordinates$lga_lon,
+    hover_text = paste(
+      "Destination:", dest,
+      "<br>Total Flights:", total_flights,
+      "<br>JFK Flights:", JFK,
+      "<br>EWR Flights:", EWR
+    )  # Prepare hover text
+  )
+
+# Step 5: Plot the map with lines and interactive hover information
+map <- ggplot() +
+  borders("state", colour = "gray70", fill = "gray90") +  # Draw state borders
+  geom_point(
+    data = flights_map_data,
+    aes(x = lon, y = lat, color = dominant_airport),
+    size = 3
+  ) +
+  geom_segment(
+    data = flights_map_data,
+    aes(
+      x = lga_lon, y = lga_lat, xend = lon, yend = lat,
+      color = dominant_airport,
+      text = hover_text  # Add hover text
+    ),
+    size = 0.8, alpha = 0.7
+  ) +
+  scale_color_manual(values = c("JFK" = "red", "EWR" = "blue")) +  # Red for JFK, blue for EWR
+  coord_cartesian(xlim = c(-125, -66), ylim = c(24, 50)) +  # Continental US
+  labs(
+    title = "Flight Connections from NY to Destinations (≥ 1000 Flights)",
+    subtitle = "Red: JFK Dominates | Blue: EWR Dominates",
+    x = "Longitude",
+    y = "Latitude",
+    color = "Dominant Airport"
+  ) +
+  theme_minimal()
+
+# Step 6: Convert the ggplot to an interactive plotly map with hover text
+interactive_map <- ggplotly(map, tooltip = "text")
+
+# Step 7: Display the interactive map
+interactive_map
+
+
+
+```
+
+```{r}
+# Summarize flight counts by destination and origin
+flights_summary <- flights_subset %>%
+  group_by(dest, origin) %>%
+  summarise(total_flights = n(), .groups = "drop") %>%
+  pivot_wider(names_from = origin, values_from = total_flights, values_fill = 0) %>%  # Convert to wide format
+  rename(`JFK Flight Count` = JFK, `EWR Flight Count` = EWR)  # Rename columns
+
+# Calculate the ratio (JFK/EWR)
+flights_summary <- flights_summary %>%
+  mutate(`Ratio (JFK/EWR)` = `JFK Flight Count` / `EWR Flight Count`)
+
+# Display the result
+flights_summary
+
+```
+
+```{r}
+# Load necessary libraries
+library(ggplot2)
+library(dplyr)
+library(nycflights13)
+library(plotly)
+
+# Step 1: Summarize flights by destination and airline
+flights_subset <- flights %>%
+  filter(!dest %in% c("HNL", "ANC"))  # Exclude Honolulu and Anchorage
+
+flights_summary <- flights_subset %>%
+  group_by(dest, carrier) %>%
+  summarise(total_flights = n(), .groups = "drop") %>%
+  group_by(dest) %>%
+  mutate(
+    dominant_airline = carrier[which.max(total_flights)],  # Determine dominant airline
+    total_flights = sum(total_flights)  # Total flights to the destination
+  ) %>%
+  filter(total_flights >= 2000)  # Keep destinations with at least 2000 flights
+
+# Step 2: Add geolocation data for destinations using the airports dataset
+flights_map_data <- flights_summary %>%
+  left_join(airports, by = c("dest" = "faa"))  # Join with airports dataset
+
+# Step 3: Add LGA coordinates as the origin point for all lines
+lga_coordinates <- airports %>%
+  filter(faa == "LGA") %>%
+  select(lat, lon) %>%
+  rename(lga_lat = lat, lga_lon = lon)
+
+flights_map_data <- flights_map_data %>%
+  mutate(
+    lga_lat = lga_coordinates$lga_lat,
+    lga_lon = lga_coordinates$lga_lon,
+    hover_text = paste(
+      "Destination:", dest,
+      "<br>Dominant Airline:", dominant_airline,
+      "<br>Total Flights:", total_flights
+    )  # Prepare hover text
+  )
+
+# Step 4: Plot the map with lines and interactive hover information
+map <- ggplot() +
+  borders("state", colour = "gray70", fill = "gray90") +  # Draw state borders
+  geom_point(
+    data = flights_map_data,
+    aes(x = lon, y = lat, color = dominant_airline),  # Color by dominant airline
+    size = 3
+  ) +
+  geom_segment(
+    data = flights_map_data,
+    aes(
+      x = lga_lon, y = lga_lat, xend = lon, yend = lat,
+      color = dominant_airline,
+      text = hover_text  # Add hover text
+    ),
+    size = 0.8, alpha = 0.7
+  ) +
+  scale_color_discrete(name = "Dominant Airline") +  # Automatically assign unique colors for airlines
+  coord_cartesian(xlim = c(-125, -66), ylim = c(24, 50)) +  # Continental US
+  labs(
+    title = "Flight Connections from NY to Destinations (≥ 2000 Flights)",
+    subtitle = "Color-coded by Dominant Airline",
+    x = "Longitude",
+    y = "Latitude",
+    color = "Dominant Airline"
+  ) +
+  theme_minimal()
+
+# Step 5: Convert the ggplot to an interactive plotly map with hover text
+interactive_map <- ggplotly(map, tooltip = "text")
+
+# Step 6: Display the interactive map
+interactive_map
+
+```
+
+```{r}
+# Step 1: Join airline names and rename to avoid conflicts
+flights_subset <- flights %>%
+  filter(
+    !dest %in% c("HNL", "ANC"),  # Exclude Honolulu and Anchorage
+    carrier %in% c("AA", "DL", "UA", "B6", "WN")  # Keep only selected airlines
+  ) %>%
+  left_join(airlines, by = c("carrier" = "carrier")) %>%
+  rename(airline_name = name)  # Rename airline name column to avoid conflict with airport names
+
+# Step 2: Summarize flights by destination and airline
+flights_summary <- flights_subset %>%
+  group_by(dest, airline_name) %>%
+  summarise(total_flights = n(), .groups = "drop") %>%
+  group_by(dest) %>%
+  mutate(
+    dominant_airline_name = airline_name[which.max(total_flights)],  # Determine dominant airline by name
+    total_flights = sum(total_flights),  # Total flights to the destination
+    avg_flights_per_day = round(total_flights / 365, 1)  # Average flights per day (1 decimal place)
+  ) %>%
+  filter(total_flights >= 365)  # Keep destinations with at least 2000 flights
+
+# Step 3: Add geolocation data for destinations using the airports dataset
+flights_map_data <- flights_summary %>%
+  left_join(airports, by = c("dest" = "faa"))  # Join with airports dataset
+
+# Step 4: Add LGA coordinates as the origin point for all lines
+lga_coordinates <- airports %>%
+  filter(faa == "LGA") %>%
+  select(lat, lon) %>%
+  rename(lga_lat = lat, lga_lon = lon)
+
+# Ensure LGA coordinates and hover text are added to flights_map_data
+flights_map_data <- flights_map_data %>%
+  mutate(
+    lga_lat = lga_coordinates$lga_lat[1],  # Add LGA latitude
+    lga_lon = lga_coordinates$lga_lon[1],  # Add LGA longitude
+    hover_text = paste(
+      "Destination:", name,  # Full airport name
+      "<br>Dominant Airline:", dominant_airline_name,  # Dominant airline name
+      "<br>Avg Flights/Day (All Airlines):", avg_flights_per_day  # Average flights per day
+    )
+  )
+
+# Step 5: Plot the map without labels for airport codes
+map <- ggplot() +
+  borders("state", colour = "grey80", fill = "grey95") +  # Light grey land and subtle borders
+  geom_point(
+    data = flights_map_data,
+    aes(
+      x = lon, y = lat, color = dominant_airline_name, size = total_flights,
+      text = hover_text  # Explicitly set hover text for Plotly
+    ),
+    alpha = 0.8  # Slight transparency for points
+  ) +
+  geom_segment(
+    data = flights_map_data,
+    aes(
+      x = lga_lon, y = lga_lat, xend = lon, yend = lat,
+      color = dominant_airline_name,
+      text = hover_text  # Explicitly set hover text for Plotly
+    ),
+    size = 0.5, alpha = 0.6  # Softer and thinner lines
+  ) +
+  scale_color_viridis_d(name = "Dominant Airline", option = "D") +  # Use the viridis palette
+  scale_size_continuous(name = "Total Flights", range = c(2, 6)) +  # Scale point sizes
+  coord_cartesian(xlim = c(-125, -66), ylim = c(24, 50)) +  # Continental US
+  labs(
+    title = "Flight Connections from NY to Destinations",
+    subtitle = "Color-coded by Dominant Airline Name | Point size proportional to total flights",
+    x = "Longitude",
+    y = "Latitude"
+  ) +
+  theme_minimal(base_size = 14) +  # Modern and clean theme
+  theme(
+    plot.title = element_text(face = "bold", size = 16, color = "black"),
+    plot.subtitle = element_text(size = 12, margin = margin(b = 10), color = "black"),
+    legend.position = "right",
+    legend.text = element_text(color = "black"),
+    legend.title = element_text(color = "black"),
+    panel.grid.major = element_blank(),  # Remove major gridlines
+    panel.grid.minor = element_blank(),  # Remove minor gridlines
+    panel.background = element_rect(fill = "white", colour = NA),  # White background
+    plot.background = element_rect(fill = "white", color = NA),  # Match overall plot background
+    panel.border = element_blank(),
+    axis.text = element_text(color = "black"),
+    axis.title = element_text(color = "black"),
+    axis.ticks = element_blank()
+  )
+
+# Step 6: Convert the ggplot to Plotly with explicit hover text
+interactive_map <- ggplotly(
+  map,
+  tooltip = "text"  # Explicitly map the hover text field
+)
+
+# Step 7: Display the interactive map
+interactive_map
+
+```
+
+```{r}
+# Step 1: Filter flights and rename columns for clarity
+flights_subset <- flights %>%
+  filter(
+    !dest %in% c("HNL", "ANC")  # Exclude Honolulu and Anchorage
+  ) %>%
+  left_join(airports, by = c("origin" = "faa")) %>%
+  rename(origin_name = name)  # Rename origin airport name to avoid conflicts
+
+# Step 2: Summarize flights by destination and origin airport
+flights_summary <- flights_subset %>%
+  group_by(dest, origin) %>%
+  summarise(total_flights = n(), .groups = "drop") %>%
+  group_by(dest) %>%
+  mutate(
+    dominant_origin = origin[which.max(total_flights)],  # Determine dominant origin airport
+    total_flights = sum(total_flights),  # Total flights to the destination
+    avg_flights_per_day = round(total_flights / 365, 1)  # Average flights per day (1 decimal place)
+  ) %>%
+  filter(total_flights >= 365)  # Keep destinations with at least 365 flights
+
+# Step 3: Add geolocation data for destinations using the airports dataset
+flights_map_data <- flights_summary %>%
+  left_join(airports, by = c("dest" = "faa")) %>%
+  left_join(airports, by = c("dominant_origin" = "faa"), suffix = c("_dest", "_origin"))
+
+# Step 4: Add LGA coordinates as the neutral origin point
+lga_coordinates <- airports %>%
+  filter(faa == "LGA") %>%
+  select(lat, lon) %>%
+  rename(lga_lat = lat, lga_lon = lon)
+
+# Add hover text and LGA coordinates to the data
+flights_map_data <- flights_map_data %>%
+  mutate(
+    lga_lat = lga_coordinates$lga_lat[1],  # Add LGA latitude
+    lga_lon = lga_coordinates$lga_lon[1],  # Add LGA longitude
+    hover_text = paste(
+      "Destination:", name_dest,  # Full destination airport name
+      "<br>Dominant Origin Airport:", name_origin,  # Dominant origin airport name
+      "<br>Avg Flights/Day (All Origins):", avg_flights_per_day  # Average flights per day
+    )
+  )
+
+# Step 5: Plot the map based on origin airports
+map <- ggplot() +
+  borders("state", colour = "grey80", fill = "grey95") +  # Light grey land and subtle borders
+  geom_point(
+    data = flights_map_data,
+    aes(
+      x = lon_dest, y = lat_dest, color = name_origin, size = total_flights,
+      text = hover_text  # Explicitly set hover text for Plotly
+    ),
+    alpha = 0.8  # Slight transparency for points
+  ) +
+  geom_segment(
+    data = flights_map_data,
+    aes(
+      x = lga_lon, y = lga_lat, xend = lon_dest, yend = lat_dest,
+      color = name_origin,
+      text = hover_text  # Explicitly set hover text for Plotly
+    ),
+    size = 0.5, alpha = 0.6  # Softer and thinner lines
+  ) +
+  scale_color_viridis_d(name = "Dominant Origin Airport", option = "D") +  # Use the viridis palette
+  scale_size_continuous(name = "Total Flights", range = c(2, 6)) +  # Scale point sizes
+  coord_cartesian(xlim = c(-125, -66), ylim = c(24, 50)) +  # Continental US
+  labs(
+    title = "Flight Connections from NY to Destinations",
+    subtitle = "Color-coded by Dominant Origin Airport | Point size proportional to total flights",
+    x = "Longitude",
+    y = "Latitude"
+  ) +
+  theme_minimal(base_size = 14) +  # Modern and clean theme
+  theme(
+    plot.title = element_text(face = "bold", size = 16, color = "black"),
+    plot.subtitle = element_text(size = 12, margin = margin(b = 10), color = "black"),
+    legend.position = "right",
+    legend.text = element_text(color = "black"),
+    legend.title = element_text(color = "black"),
+    panel.grid.major = element_blank(),  # Remove major gridlines
+    panel.grid.minor = element_blank(),  # Remove minor gridlines
+    panel.background = element_rect(fill = "white", colour = NA),  # White background
+    plot.background = element_rect(fill = "white", color = NA),  # Match overall plot background
+    panel.border = element_blank(),
+    axis.text = element_text(color = "black"),
+    axis.title = element_text(color = "black"),
+    axis.ticks = element_blank()
+  )
+
+# Step 6: Convert the ggplot to Plotly with explicit hover text
+interactive_map <- ggplotly(
+  map,
+  tooltip = "text"  # Explicitly map the hover text field
+)
+
+# Step 7: Display the interactive map
+interactive_map
+
+```
